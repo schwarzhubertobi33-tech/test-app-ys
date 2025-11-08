@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mini Wissensdatenbank</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:2rem;line-height:1.5}
+    .card{border:1px solid #e5e7eb;border-radius:12px;padding:1rem;margin:.75rem 0}
+    .row{display:flex;gap:.5rem;align-items:center;margin:.5rem 0}
+    button{cursor:pointer;border:1px solid #111;padding:.5rem .8rem;border-radius:10px;background:#111;color:#fff}
+    input{padding:.5rem;border:1px solid #cbd5e1;border-radius:8px}
+    .muted{color:#64748b}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <h1>Mini Wissensdatenbank</h1>
+
+  <div id="auth">
+    <h3>Login / Registrieren</h3>
+    <div class="row">
+      <input id="email" type="email" placeholder="E-Mail" />
+      <input id="password" type="password" placeholder="Passwort" />
+      <button id="signup">Registrieren</button>
+      <button id="signin">Login</button>
+      <button id="signout" style="display:none">Logout</button>
+    </div>
+    <div id="who" class="muted"></div>
+  </div>
+
+  <h2>Artikel</h2>
+  <div id="list"></div>
+
+  <script>
+    // ➜ HIER DEINE SUPABASE-DATEN EINTRAGEN:
+    const SUPABASE_URL = "https://DEIN-PROJECT.supabase.co";
+    const SUPABASE_ANON = "DEIN-ANON-KEY";
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    const email = document.getElementById('email');
+    const password = document.getElementById('password');
+    const who = document.getElementById('who');
+    const signoutBtn = document.getElementById('signout');
+
+    document.getElementById('signup').onclick = async () => {
+      const { error } = await supabase.auth.signUp({ email: email.value, password: password.value });
+      alert(error ? error.message : 'Registriert! Bitte einloggen.');
+    };
+
+    document.getElementById('signin').onclick = async () => {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.value, password: password.value });
+      if (error) alert(error.message);
+      await refresh();
+    };
+
+    signoutBtn.onclick = async () => {
+      await supabase.auth.signOut();
+      await refresh();
+    };
+
+    async function refresh() {
+      const { data: { user } } = await supabase.auth.getUser();
+      signoutBtn.style.display = user ? 'inline-block' : 'none';
+      who.textContent = user ? `Eingeloggt als ${user.email}` : 'Nicht eingeloggt';
+      await loadArticles(user);
+    }
+
+    async function loadArticles(user) {
+      const list = document.getElementById('list');
+      list.innerHTML = 'Lade...';
+      const { data: articles, error } = await supabase.from('articles').select('*').order('title');
+      if (error) return list.textContent = 'Fehler beim Laden.';
+      list.innerHTML = '';
+
+      let readIds = new Set();
+      if (user) {
+        const { data: prog } = await supabase.from('progress').select('article_id');
+        readIds = new Set((prog || []).map(p => p.article_id));
+      }
+
+      for (const a of articles) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <b>${a.title}</b>
+          <p class="muted">${a.summary ?? ''}</p>
+          <div class="row">
+            <button data-id="${a.id}">${readIds.has(a.id) ? '✔️ Gelesen' : 'Als gelesen markieren'}</button>
+          </div>
+        `;
+        const btn = card.querySelector('button');
+        btn.onclick = async () => {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return alert('Bitte zuerst einloggen.');
+          await supabase.from('progress').insert({ user_id: user.id, article_id: a.id });
+          btn.textContent = '✔️ Gelesen';
+        };
+        list.appendChild(card);
+      }
+    }
+
+    refresh();
+  </script>
+</body>
+</html>
+
